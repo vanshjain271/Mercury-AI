@@ -5,6 +5,7 @@ import {
   getCartTotals,
   getDefaultRegionId,
   getDefaultSalesChannelId,
+  getDefaultShippingOptionId,
   getRazorpayPaymentSession,
   RAZORPAY_PROVIDER_ID,
 } from "../store-client"
@@ -27,9 +28,10 @@ export const addToCartTool: ToolDefinition = {
     let cartId = input.cart_id as string | undefined
 
     if (!cartId) {
-      const [regionId, salesChannelId] = await Promise.all([
+      const [regionId, salesChannelId, shippingOptionId] = await Promise.all([
         getDefaultRegionId(ctx),
         getDefaultSalesChannelId(ctx),
+        getDefaultShippingOptionId(ctx),
       ])
       const { cart } = await storeFetch<{ cart: { id: string } }>(ctx, "/store/carts", {
         method: "POST",
@@ -41,6 +43,15 @@ export const addToCartTool: ToolDefinition = {
         },
       })
       cartId = cart.id
+      // Every product Mercury sells requires shipping, and Medusa refuses to
+      // complete a cart with no shipping method attached - see
+      // getDefaultShippingOptionId in store-client.ts. Mercury only ever
+      // seeds one shipping option, so there is nothing for the customer to
+      // choose here.
+      await storeFetch(ctx, `/store/carts/${cartId}/shipping-methods`, {
+        method: "POST",
+        body: { option_id: shippingOptionId },
+      })
     } else {
       await storeFetch(ctx, `/store/carts/${cartId}/line-items`, {
         method: "POST",

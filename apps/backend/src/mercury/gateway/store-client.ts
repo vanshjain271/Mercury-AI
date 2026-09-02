@@ -16,6 +16,7 @@ import { mercuryConfig } from "../config"
 let cachedPublishableKey: string | null = null
 let cachedRegionId: string | null = null
 let cachedSalesChannelId: string | null = null
+let cachedShippingOptionId: string | null = null
 
 async function getPublishableKey(ctx: ToolContext): Promise<string> {
   if (cachedPublishableKey) return cachedPublishableKey
@@ -71,6 +72,33 @@ export async function getDefaultSalesChannelId(ctx: ToolContext): Promise<string
   }
   cachedSalesChannelId = channel.id
   return cachedSalesChannelId
+}
+
+/**
+ * Every physical product Mercury sells requires shipping, and Medusa's own
+ * cart-completion workflow refuses to complete a cart with items that need
+ * shipping but no shipping method attached (see validateShippingStep in
+ * Medusa core). Mercury's seed data creates exactly one standard shipping
+ * option, so add_to_cart can attach it automatically the moment a new cart
+ * is created - the customer never has to think about shipping choices for
+ * this MVP.
+ */
+export async function getDefaultShippingOptionId(ctx: ToolContext): Promise<string> {
+  if (cachedShippingOptionId) return cachedShippingOptionId
+  const query = ctx.container.resolve(ContainerRegistrationKeys.QUERY)
+  const { data } = await query.graph({
+    entity: "shipping_option",
+    fields: ["id", "name"],
+  })
+  const option = (data as { id: string }[])[0]
+  if (!option) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_FOUND,
+      "No shipping option found. Run the Mercury seed script first."
+    )
+  }
+  cachedShippingOptionId = option.id
+  return cachedShippingOptionId
 }
 
 export async function storeFetch<T = any>(
