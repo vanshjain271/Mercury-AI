@@ -1,13 +1,13 @@
-import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils"
 import { ToolDefinition } from "../types"
 import {
   storeFetch,
   getCartTotals,
   getDefaultRegionId,
   getDefaultSalesChannelId,
+  getRazorpayPaymentSession,
+  RAZORPAY_PROVIDER_ID,
 } from "../store-client"
-
-const RAZORPAY_PROVIDER_ID = "pp_razorpay_razorpay"
 
 export const addToCartTool: ToolDefinition = {
   name: "add_to_cart",
@@ -110,13 +110,50 @@ export const createPaymentSessionTool: ToolDefinition = {
 export const completeOrderTool: ToolDefinition = {
   name: "complete_order",
   description:
-    "Finalize a cart into a real order after the customer has completed the Razorpay checkout client-side. Never marks an order paid without backend confirmation - this calls Medusa's own cart-completion workflow, which re-verifies the payment.",
+    "Finalize a cart into a real order after the customer has completed the Razorpay checkout client-side. Pass the razorpay_payment_id and razorpay_signature returned by the Razorpay Checkout widget so Mercury can verify them before completing - never marks an order paid without that backend verification. This calls Medusa's own cart-completion workflow, which independently re-confirms the payment with Razorpay.",
   inputSchema: {
     type: "object",
-    properties: { cart_id: { type: "string" } },
+    properties: {
+      cart_id: { type: "string" },
+      razorpay_payment_id: { type: "string" },
+      razorpay_signature: { type: "string" },
+    },
     required: ["cart_id"],
   },
   execute: async (input, ctx) => {
+    const razorpayPaymentId = input.razorpay_payment_id as string | undefined
+    const razorpaySignature = input.razorpay_signature as string | undefined
+
+    if (razorpayPaymentId && razorpaySignature) {
+      const session = await getRazorpayPaymentSession(ctx, input.cart_id as string)
+      if (!session) {
+        return {
+          success: false,
+          error: "No Razorpay payment session found for this cart. Call create_payment_session first.",
+        }
+      }
+
+      const paymentModule: any = ctx.container.resolve(Modules.PAYMENT)
+      try {
+        // Delegates straight to our Razorpay provider's updatePayment(),
+        // which does the actual HMAC signature verification (see
+        // src/modules/razorpay/service.ts) - if it doesn't match, this
+        // throws and the cart is never completed.
+        await paymentModule.updatePaymentSession({
+          id: session.id,
+          amount: session.amount,
+          currency_code: session.currency_code,
+          data: {
+            ...session.data,
+            razorpay_payment_id: razorpayPaymentId,
+            razorpay_signature: razorpaySignature,
+          },
+        })
+      } catch (error) {
+        return { success: false, error: (error as Error).message }
+      }
+    }
+
     const result = await storeFetch<
       | { type: "order"; order: { id: string; display_id: number; total: number } }
       | { type: "cart"; cart: unknown; error: { message: string; type: string } }

@@ -129,3 +129,43 @@ export async function getCartTotals(
     item_count: itemCount,
   }
 }
+
+export const RAZORPAY_PROVIDER_ID = "pp_razorpay_razorpay"
+
+/**
+ * Finds the Razorpay payment session attached to a cart's payment
+ * collection, so the gateway can attach a verified razorpay_payment_id /
+ * razorpay_signature to it (via the Payment Module's updatePaymentSession)
+ * before asking Medusa to complete the cart.
+ */
+export async function getRazorpayPaymentSession(
+  ctx: ToolContext,
+  cartId: string
+): Promise<{
+  id: string
+  amount: number
+  currency_code: string
+  data: Record<string, unknown>
+} | null> {
+  const query = ctx.container.resolve(ContainerRegistrationKeys.QUERY)
+  const { data } = await query.graph({
+    entity: "cart_payment_collection",
+    fields: [
+      "payment_collection.payment_sessions.id",
+      "payment_collection.payment_sessions.provider_id",
+      "payment_collection.payment_sessions.amount",
+      "payment_collection.payment_sessions.currency_code",
+      "payment_collection.payment_sessions.data",
+    ],
+    filters: { cart_id: cartId },
+  })
+  const sessions = (data as any[])[0]?.payment_collection?.payment_sessions ?? []
+  const session = sessions.find((s: any) => s.provider_id === RAZORPAY_PROVIDER_ID)
+  if (!session) return null
+  return {
+    id: session.id,
+    amount: session.amount,
+    currency_code: session.currency_code,
+    data: session.data ?? {},
+  }
+}

@@ -17,5 +17,21 @@ module.exports = defineConfig({
     {
       resolve: './src/modules/mercury',
     },
+    {
+      resolve: '@medusajs/medusa/payment',
+      options: {
+        providers: [
+          {
+            resolve: './src/modules/razorpay',
+            id: 'razorpay',
+            options: {
+              keyId: process.env.RAZORPAY_KEY_ID,
+              keySecret: process.env.RAZORPAY_KEY_SECRET,
+              webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET,
+            },
+          },
+        ],
+      },
+    },
   ],
 })
