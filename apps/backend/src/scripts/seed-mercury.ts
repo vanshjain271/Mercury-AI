@@ -452,10 +452,10 @@ export default async function seedMercuryData({ container }: ExecArgs) {
   logger.info("[mercury-seed] Seeding publishable API key...")
   const { data: existingKeys } = await query.graph({
     entity: "api_key",
-    fields: ["id"],
+    fields: ["id", "token"],
     filters: { type: "publishable" },
   })
-  let publishableApiKey = (existingKeys as { id: string }[])[0]
+  let publishableApiKey = (existingKeys as { id: string; token: string }[])[0]
   if (!publishableApiKey) {
     const {
       result: [created],
@@ -793,6 +793,9 @@ export default async function seedMercuryData({ container }: ExecArgs) {
   }
 
   logger.info("[mercury-seed] Mercury seed complete.")
+  logger.info(
+    `[mercury-seed] Buyer app publishable key (set as NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY in apps/buyer/.env.local): ${publishableApiKey.token}`
+  )
 }
 
 function abandonedCartsTotal(items: { sku: string; quantity: number }[]): number {
