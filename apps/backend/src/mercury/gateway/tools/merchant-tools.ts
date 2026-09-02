@@ -78,11 +78,17 @@ export const findOpportunitiesTool: ToolDefinition = {
     const mercuryService: any = ctx.container.resolve(MERCURY_MODULE)
     const filter: Record<string, unknown> = {}
     if (input.status) filter.status = input.status
+    // Sorted in JS rather than at the DB level: `severity` is a text enum
+    // ("low" | "medium" | "high"), and an alphabetical DB sort does not
+    // match true severity order (it would put "medium" first).
+    const severityRank: Record<string, number> = { high: 3, medium: 2, low: 1 }
     const opportunities = await mercuryService.listOpportunities(filter, {
-      order: { severity: "DESC" },
-      take: input.limit ?? 20,
+      order: { created_at: "DESC" },
     })
-    return { opportunities }
+    const sorted = (opportunities as { severity: string }[])
+      .sort((a, b) => (severityRank[b.severity] ?? 0) - (severityRank[a.severity] ?? 0))
+      .slice(0, input.limit ?? 20)
+    return { opportunities: sorted }
   },
 }
 
