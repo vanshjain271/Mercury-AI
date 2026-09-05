@@ -503,10 +503,7 @@ export default async function seedMercuryData({ container }: ExecArgs) {
           status: ProductStatus.PUBLISHED,
           thumbnail: `https://placehold.co/600x600/1a1a2e/ffffff?text=${encodeURIComponent(product.title)}`,
           metadata: { rating: product.rating, features: product.features },
-          options:
-            product.variants.length > 1
-              ? [{ title: "Variant", values: product.variants.map((v) => v.title) }]
-              : [{ title: "Variant", values: ["Standard"] }],
+          options: [{ title: "Variant", values: product.variants.map((v) => v.title) }],
           variants: product.variants.map((variant) => ({
             title: variant.title,
             sku: variant.sku,
