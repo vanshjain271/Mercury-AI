@@ -66,6 +66,30 @@ function randInt(min: number, max: number): number {
   return min + Math.floor(rand() * (max - min + 1))
 }
 
+// The historical-order loop below makes ~40-65 sequential DB round-trips in
+// one run, which is long enough that a single dropped connection (a Neon
+// serverless hiccup, a Wi-Fi blip - not anything this script controls) can
+// abort the whole seed. Retrying just the one failed unit of work is safe
+// (each iteration creates a brand new order) and far more robust than
+// hoping the network behaves for the full run.
+async function withRetry<T>(fn: () => Promise<T>, label: string, attempts = 3, delayMs = 2000): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fn()
+    } catch (error) {
+      lastError = error
+      if (attempt < attempts) {
+        console.warn(
+          `[mercury-seed] ${label} failed (attempt ${attempt}/${attempts}): ${(error as Error).message}. Retrying...`
+        )
+        await new Promise((resolve) => setTimeout(resolve, delayMs))
+      }
+    }
+  }
+  throw lastError
+}
+
 const updateStoreCurrencies = createWorkflow(
   "update-store-currencies",
   (input: { supported_currencies: { currency_code: string; is_default?: boolean }[]; store_id: string }) => {
@@ -622,26 +646,30 @@ export default async function seedMercuryData({ container }: ExecArgs) {
           }
         })
 
-        const { result: order } = await createOrderWorkflow(container).run({
-          input: {
-            region_id: region.id,
-            sales_channel_id: salesChannel.id,
-            email,
-            currency_code: CURRENCY_CODE,
-            status: "completed",
-            items,
-            shipping_address: {
-              first_name: email.split(".")[0],
-              last_name: "Customer",
-              address_1: "MG Road",
-              city: "Bengaluru",
-              province: "KA",
-              postal_code: "560001",
-              country_code: REGION_COUNTRY,
-              phone: "9800000000",
-            },
-          },
-        })
+        const { result: order } = await withRetry(
+          () =>
+            createOrderWorkflow(container).run({
+              input: {
+                region_id: region.id,
+                sales_channel_id: salesChannel.id,
+                email,
+                currency_code: CURRENCY_CODE,
+                status: "completed",
+                items,
+                shipping_address: {
+                  first_name: email.split(".")[0],
+                  last_name: "Customer",
+                  address_1: "MG Road",
+                  city: "Bengaluru",
+                  province: "KA",
+                  postal_code: "560001",
+                  country_code: REGION_COUNTRY,
+                  phone: "9800000000",
+                },
+              },
+            }),
+          `create historical order ${orderIndex + 1}`
+        )
 
         orderBackfillTargets.push({ id: order.id, daysAgo })
         orderIndex++
