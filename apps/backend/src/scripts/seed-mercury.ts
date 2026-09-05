@@ -539,8 +539,22 @@ export default async function seedMercuryData({ container }: ExecArgs) {
       })
     }
   }
+  // Historical orders below are real createOrderWorkflow calls, which check
+  // and reserve actual inventory - so variants we *want* to end up low/out
+  // of stock (for the inventory-risk opportunities demo) would make random
+  // historical order generation fail the moment one was picked. Seed with a
+  // generous buffer first, generate the historical orders against that
+  // buffer, then correct every level down to its real demo target below.
+  const INVENTORY_SEED_BUFFER = 500
   if (inventoryLevels.length > 0) {
-    await createInventoryLevelsWorkflow(container).run({ input: { inventory_levels: inventoryLevels } })
+    await createInventoryLevelsWorkflow(container).run({
+      input: {
+        inventory_levels: inventoryLevels.map((level) => ({
+          ...level,
+          stocked_quantity: Math.max(level.stocked_quantity, INVENTORY_SEED_BUFFER),
+        })),
+      },
+    })
   }
 
   logger.info("[mercury-seed] Seeding customers...")
@@ -636,6 +650,16 @@ export default async function seedMercuryData({ container }: ExecArgs) {
     logger.info(`[mercury-seed] Created ${orderIndex} historical orders.`)
   } else {
     logger.info("[mercury-seed] Orders already exist - skipping historical order generation.")
+  }
+
+  // Historical orders above were confirmed against the generous buffer
+  // seeded earlier, not the real demo stock levels - correct every level
+  // down to its intended target now, before anything (opportunities,
+  // storefront) reads current stock.
+  if (inventoryLevels.length > 0) {
+    const inventoryModuleService = container.resolve(Modules.INVENTORY)
+    await inventoryModuleService.updateInventoryLevels(inventoryLevels)
+    logger.info(`[mercury-seed] Corrected ${inventoryLevels.length} inventory level(s) to their demo targets.`)
   }
 
   // Optional realism step: spread the orders just created across the last
