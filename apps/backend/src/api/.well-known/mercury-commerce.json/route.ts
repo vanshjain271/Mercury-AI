@@ -1,6 +1,6 @@
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { mercuryConfig } from "../../../../mercury/config"
+import { mercuryConfig } from "../../../mercury/config"
 
 /**
  * Agent-readable commerce discovery document, in the spirit of
